@@ -8,7 +8,7 @@ from PIL import Image
 from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 
 def exists_folder(service, folder_id, folder_name):
@@ -120,10 +120,10 @@ def download_images(service, file_infos):
 def process_and_save_images(service, png_files, output_prefix):
     file_date_info = process_files(service, png_files)
     images_to_merge = download_images(service, file_date_info)
-    merge_and_save_images(images_to_merge, output_prefix)
+    merge_and_save_images(service, images_to_merge, output_prefix)
 
 
-def merge_and_save_images(images_to_merge, output_filename_prefix):
+def merge_and_save_images(service, images_to_merge, output_filename_prefix):
     # 画像を4列で合成する
     num_images = len(images_to_merge)
     print(f'num_images: {num_images}')
@@ -141,10 +141,18 @@ def merge_and_save_images(images_to_merge, output_filename_prefix):
             x = (index % num_columns) * width
             y = (index // num_columns) * height
             merged_image.paste(image, (x, y))
-        # 画像を保存
+        # 画像をGoogle Driveに保存
         output_filename = f'{output_filename_prefix}.png'
-        merged_image.save(output_filename)
-        print(f'画像が保存されました: {output_filename}')
+        output_file_path = io.BytesIO()
+        merged_image.save(output_file_path, format='PNG')
+        output_file_path.seek(0)
+        file_metadata = {
+            'name': output_filename,
+            'parents': [get_folder_id_by_name(service, os.getenv('FOLDER_ID'), output_filename_prefix)]
+        }
+        media = MediaIoBaseUpload(output_file_path, mimetype='image/png')
+        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        print("画像がGoogle Driveに保存されました: " + output_filename + ", ID: " + file.get('id'))
 
 
 def setup_and_parse_arguments():
