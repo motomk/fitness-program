@@ -109,13 +109,18 @@ def process_files(service, png_files):
     return file_date_info
 
 
-def download_images(service, file_date_info):
-    images_to_merge = []
-    # 選択されたファイルから画像をダウンロードしてリストに追加
-    for file_info in file_date_info:
+def download_images(service, file_infos):
+    images = []
+    for file_info in file_infos:
         image = download_and_open_image(service, file_info['id'])
-        images_to_merge.append(image)
-    return images_to_merge
+        images.append(image)
+    return images
+
+
+def process_and_save_images(service, png_files, output_prefix):
+    file_date_info = process_files(service, png_files)
+    images_to_merge = download_images(service, file_date_info)
+    merge_and_save_images(images_to_merge, output_prefix)
 
 
 def merge_and_save_images(images_to_merge, output_filename_prefix):
@@ -159,12 +164,6 @@ def prepare_folder_and_files(service, folder_id, custom_folder):
     items = read_files(service, custom_folder_id)
     png_files = [item for item in items if item['name'].lower().endswith('.png')]
     return png_files
-
-
-def process_and_save_images(service, png_files, output_prefix):
-    file_date_info = process_files(service, png_files)
-    images_to_merge = download_images(service, file_date_info)
-    merge_and_save_images(images_to_merge, output_prefix)
 
 
 def main():
