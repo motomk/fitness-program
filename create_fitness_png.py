@@ -83,8 +83,7 @@ def download_and_open_image(service, file_id):
     return Image.open(fh)
 
 
-def process_files(service, png_files):
-    file_date_info = []
+def process_files(service, png_files, folder_id, output_prefix):
     for file in png_files:
         image = download_and_open_image(service, file['id'])
         # OCRを使用してテキストを抽出
@@ -94,61 +93,26 @@ def process_files(service, png_files):
         date_pattern = re.compile(r'\d{2}/\d{2}/\d{4} \d{2}:\d{2}')
         dates = date_pattern.findall(text)
         # 日付形式を変換する
-        converted_dates = []
-        for date in dates:
+        if dates:
+            date = dates[0]
             # 元の形式は DD/MM/YYYY HH:MM なので、日付部分だけを取り出して変換
             date_only = date.split(' ')[0]  # 'DD/MM/YYYY' を取得
             day, month, year = date_only.split('/')
-            converted_date = f'{year}-{month}-{day}'
-            converted_dates.append(converted_date)
-        # file['name'], file['id'], converted_dateの配列を保持するためのリストを初期化
-        for date in converted_dates:
-            file_date_info.append({'name': file['name'], 'id': file['id'], 'date': date})
-    # file_date_infoを日付順にソートして更新
-    file_date_info = sorted(file_date_info, key=lambda x: x['date'])
-    return file_date_info
+            converted_date = f'{year}{month}{day}'
+        else:
+            # 日付が見つからない場合、現在の日付を使用
+            converted_date = datetime.datetime.now().strftime('%Y%m%d')
 
-
-def download_images(service, file_infos):
-    images = []
-    for file_info in file_infos:
-        image = download_and_open_image(service, file_info['id'])
-        images.append(image)
-    return images
-
-
-def process_and_save_images(service, png_files, output_prefix):
-    file_date_info = process_files(service, png_files)
-    images_to_merge = download_images(service, file_date_info)
-    merge_and_save_images(service, images_to_merge, output_prefix)
-
-
-def merge_and_save_images(service, images_to_merge, output_filename_prefix):
-    # 画像を4列で合成する
-    num_images = len(images_to_merge)
-    print(f'num_images: {num_images}')
-    num_columns = 4
-    num_rows = (num_images + num_columns - 1) // num_columns  # 切り上げて行数を計算
-    # 合成画像のサイズを計算（すべての画像は同じサイズと仮定）
-    if num_images > 0:
-        width, height = images_to_merge[0].size
-        merged_width = width * num_columns
-        merged_height = height * num_rows
-        # 新しい画像を作成
-        merged_image = Image.new('RGB', (merged_width, merged_height))
-        # 画像を新しい画像に配置
-        for index, image in enumerate(images_to_merge):
-            x = (index % num_columns) * width
-            y = (index // num_columns) * height
-            merged_image.paste(image, (x, y))
-        # 画像をGoogle Driveに保存
-        output_filename = f'{output_filename_prefix}.png'
+        # 画像をリネームして保存
+        output_filename = f'{converted_date}_{output_prefix}.png'
         output_file_path = io.BytesIO()
-        merged_image.save(output_file_path, format='PNG')
+        image.save(output_file_path, format='PNG')
         output_file_path.seek(0)
+
+        # Google Driveに保存
         file_metadata = {
             'name': output_filename,
-            'parents': [get_folder_id_by_name(service, os.getenv('FOLDER_ID'), output_filename_prefix)]
+            'parents': [folder_id]
         }
         media = MediaIoBaseUpload(output_file_path, mimetype='image/png')
         file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
@@ -171,19 +135,20 @@ def prepare_folder_and_files(service, folder_id, custom_folder):
     print(f'指定されたフォルダ {custom_folder} のファイル一覧を取得します。')
     items = read_files(service, custom_folder_id)
     png_files = [item for item in items if item['name'].lower().endswith('.png')]
-    return png_files
+    return png_files, custom_folder_id
 
 
 def main():
     args = setup_and_parse_arguments()
     service = initialize_google_drive_service()
     folder_id = os.getenv('FOLDER_ID')
+    output_prefix = os.getenv('NAME')
 
     if args.create:
-        png_files = prepare_folder_and_files(service, folder_id, args.create)
+        png_files, custom_folder_id = prepare_folder_and_files(service, folder_id, args.create)
         if png_files:
             print(f'.pngファイルの数: {len(png_files)}')
-            process_and_save_images(service, png_files, args.create)
+            process_files(service, png_files, custom_folder_id, output_prefix)
 
 
 if __name__ == '__main__':
